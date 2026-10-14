@@ -1,0 +1,49 @@
+{
+  "name": "dsh-ucloud",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BUPT 教学云（ucloud）插件：在「设置 → 插件」页配置学号与密码，并为 DSH 提供未完成作业、作业详情、课程搜索、附件上传与作业提交工具。",
+  "type": "module",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./icon.svg": "./icon.svg",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "vendor",
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-api-remotes"
+      ]
+    }
+  },
+  "scripts": {
+    "test": "node tests/host.test.mjs && node tests/client.test.mjs"
+  },
+  "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Linear1024/dsh-bupt-ucloud.git"
+  }
+}

@@ -1,0 +1,7 @@
+# Verification overlay: compose the real profile with dsh-ucloud inserted by
+# absolute path, so `dsh --dump-config` validates the row this plugin's own
+# cordis.patch.yml declares. Used by nothing at runtime.
+- id: ucloud
+  name: /absolute/path/to/dsh-ucloud/index.js
+  config:
+    username: '20210001'

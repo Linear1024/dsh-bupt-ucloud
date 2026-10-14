@@ -1,0 +1,9 @@
+# Installed dependencies (this plugin has none, but the profile link may add some)
+node_modules/
+
+# Scratch profiles the integration recipe creates
+.dsh-test/
+
+# Logs and editor noise
+*.log
+.DS_Store
