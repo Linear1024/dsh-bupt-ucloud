@@ -103,10 +103,14 @@ function fakeCtx({ credentials = {}, connection } = {}) {
   }
 }
 
-async function callTool(name, { ctx, env, args = {}, signal } = {}) {
+async function callTool(name, { ctx, env, args = {}, signal, exec } = {}) {
   const definition = toolDefinitions(ctx, env).find((tool) => tool.name === name)
   assert.ok(definition, `tool ${name} is registered`)
-  return definition.execute(args, { signal: signal ?? new AbortController().signal })
+  const result = await definition.execute(args, { signal: signal ?? new AbortController().signal, ...exec })
+  // DSH materializes a tool result as lossless JSON: an `undefined` property is
+  // dropped by serialization and fails the whole call. Every tool, every fixture.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(result)), result, `${name} output must be lossless JSON`)
+  return result
 }
 
 /** The routes a successful 学号+密码 CAS login takes. */
@@ -938,6 +942,92 @@ await check('a relative upload path resolves against the session workspace', asy
     () => callTool('ucloud_upload', { ctx: fakeCtx({ credentials: CREDENTIALS }), env, args: { path: '不存在.png' } }),
     (error) => error.code === 'file-not-found' && error.message.includes(path.join(base, '不存在.png')),
   )
+})
+
+await check('optional platform fields come back as null, never as undefined', async () => {
+  const store = await tempStore()
+  await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
+  const inHours = (hours) => {
+    const date = new Date(Date.now() + hours * 3_600_000)
+    const pad = (value) => String(value).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  }
+  const fetchImpl = mockFetch([
+    { method: 'GET', match: 'site/student/undone', reply: () => json({ success: true, data: { undoneNum: 1, siteNum: 1, undoneList: [
+      { activityId: 'LATER', activityName: '下周的作业', type: 3, siteId: 11, siteName: '高等数学', endTime: inHours(240) },
+    ] } }) },
+    { method: 'GET', match: 'site/list/student/current', reply: () => json({ data: { records: [{ id: 11, siteName: '高等数学', teachers: [{ name: '李老师' }] }] } }) },
+    { method: 'POST', match: 'ykt-site/work/student/list', reply: () => json({ data: { records: [{ id: 'LATER' }] } }) },
+  ])
+  const result = await callTool('ucloud_undone_list', {
+    ctx: fakeCtx({ credentials: CREDENTIALS }),
+    env: { store, fetch: fetchImpl, username: () => '20210001' },
+  })
+  // A non-expired activity is never looked up in detail, so these stay null —
+  // undefined here is what made the whole tool call fail as "not lossless JSON".
+  assert.equal(result.items[0].canLateSubmit, null)
+  assert.equal(result.items[0].isOvertimeCommit, null)
+})
+
+await check('ucloud_upload takes the calling session\'s workspace as its base', async () => {
+  const store = await tempStore()
+  await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
+  const sessionDir = await mkdtemp(path.join(tmpdir(), 'dsh-ucloud-session-'))
+  await mkdir(path.join(sessionDir, 'hw'), { recursive: true })
+  await writeFile(path.join(sessionDir, 'hw', '答案.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+  const fetchImpl = mockFetch([
+    { method: 'POST', match: 'resource/upload/biz', reply: () => json({ success: true, data: 'RID-SESSION' }) },
+    { method: 'GET', match: 'resource/preview-url', reply: () => json({ data: {} }) },
+  ])
+  const exec = { agent: { session: { header: { cwd: sessionDir } } } }
+  const result = await callTool('ucloud_upload', {
+    ctx: fakeCtx({ credentials: CREDENTIALS }),
+    // A misleading profile-level fallback: the session cwd must win.
+    env: { store, fetch: fetchImpl, username: () => '20210001', cwd: () => '/nonexistent-profile-workspace' },
+    args: { path: 'hw/答案.png' },
+    exec,
+  })
+  assert.equal(result.resourceId, 'RID-SESSION')
+  assert.equal(result.filename, '答案.png')
+})
+
+await check('an attachment whose name already carries its extension is not doubled', async () => {
+  const store = await tempStore()
+  await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
+  const fetchImpl = mockFetch([
+    { method: 'GET', match: 'ykt-site/work/detail', reply: () => json({ success: true, data: {
+      assignmentTitle: '4-1电介质', assignmentContent: '', assignmentEndTime: '2026-10-16T23:59:00',
+      assignmentResource: [{ resourceId: 'R1', resourceName: '大物B下-4-1：电介质.docx' }],
+    } }) },
+    ...listingRoutes.slice(1),
+    { method: 'GET', match: 'resource/list/byId', reply: () => json({ success: true, data: [
+      { storageId: 'S1', name: '大物B下-4-1：电介质.docx', ext: 'docx', id: 'R1' },
+    ] }) },
+    { method: 'GET', match: 'resource/preview-url', reply: () => json({ data: { previewUrl: 'https://cdn.example/a.docx' } }) },
+  ])
+  const result = await callTool('ucloud_homework', {
+    ctx: fakeCtx({ credentials: CREDENTIALS }),
+    env: { store, fetch: fetchImpl, username: () => '20210001' },
+    args: { activityId: 'A1' },
+  })
+  assert.equal(result.resources[0].name, '大物B下-4-1：电介质.docx')
+  assert.ok(result.report.includes('大物B下-4-1：电介质.docx：'), result.report)
+  assert.ok(!result.report.includes('.docx.docx'), result.report)
+})
+
+await check('a token about to expire is refreshed instead of used', async () => {
+  const store = await tempStore()
+  // 30 seconds left: inside the 60-second skew, so a new request would race the
+  // platform's own expiry and come back 401.
+  await store.update((draft) => {
+    draft.users['20210001'] = { userinfo: { access_token: jwt(30), refresh_token: jwt(7200), user_id: 'U1' } }
+  })
+  const fetchImpl = mockFetch([
+    { method: 'POST', match: 'ykt-basics/oauth/token', reply: () => json({ access_token: jwt(3600), refresh_token: jwt(7200), user_id: 'U1' }) },
+  ])
+  const userinfo = await getToken({ username: '20210001', password: 'pw', store, fetch: fetchImpl })
+  assert.equal(fetchImpl.calls.length, 1, 'the near-expiry token was refreshed')
+  assert.equal(isExpired(userinfo.access_token), false)
 })
 
 await check('ucloud_upload refuses both or neither source', async () => {

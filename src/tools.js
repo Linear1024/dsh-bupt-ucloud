@@ -270,6 +270,61 @@ function itemLines(item, index) {
   ].join('\n')
 }
 
+/**
+ * The calling session's workspace, as the built-in filesystem tools read it.
+ *
+ * A Web host serves several sessions from one process, so the process working
+ * directory is not the caller's workspace; `exec.agent.session.header.cwd` is
+ * the fact the fs tools resolve relative paths against.
+ *
+ * @param exec - the tool execution context.
+ * @returns the session cwd, or undefined when the caller has no agent.
+ */
+function sessionCwd(exec) {
+  try {
+    const cwd = exec?.agent?.session?.header?.cwd
+    return typeof cwd === 'string' && cwd.length > 0 ? cwd : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Rewrite a value so `JSON.parse(JSON.stringify(value))` returns it unchanged.
+ *
+ * DSH requires every tool result to be lossless JSON: an `undefined` property
+ * (or array element) is dropped by serialization and fails the whole call as
+ * `value is not lossless JSON`. Optional platform fields are `undefined` all the
+ * time, so every tool's output goes through here once, at the registry seam.
+ *
+ * @param value - the tool's canonical result.
+ * @returns the same data with `undefined` written as `null`.
+ */
+function jsonSafe(value) {
+  if (value === undefined) return null
+  if (Array.isArray(value)) return value.map((entry) => jsonSafe(entry))
+  if (value !== null && typeof value === 'object') {
+    const out = {}
+    for (const [key, child] of Object.entries(value)) out[key] = jsonSafe(child)
+    return out
+  }
+  return value
+}
+
+/**
+ * The display name of one attachment. The platform's `name` usually already
+ * carries the extension, so the suffix is appended only when it is missing.
+ * @param name - platform file name.
+ * @param ext - platform extension, without the dot.
+ * @returns the name to render.
+ */
+function attachmentName(name, ext) {
+  const base = String(name ?? '')
+  const suffix = String(ext ?? '')
+  if (suffix.length === 0) return base
+  return base.toLowerCase().endsWith(`.${suffix.toLowerCase()}`) ? base : `${base}.${suffix}`
+}
+
 /** @param content - model-facing text. */
 function text(content) {
   return [{ type: 'text', text: content }]
@@ -374,8 +429,10 @@ function undoneListTool(ctx, env) {
           teachers: item.courseInfo?.teachers ?? '',
           endTime: item.endTime ?? '',
           deadlineState: item.deadline.state,
-          canLateSubmit: item.canLateSubmit,
-          isOvertimeCommit: item.isOvertimeCommit,
+          // Only expired activities are looked up in detail; the rest stay null
+          // so the value is lossless JSON (see jsonSafe).
+          canLateSubmit: item.canLateSubmit ?? null,
+          isOvertimeCommit: item.isOvertimeCommit ?? null,
         })),
         report: sections.join('\n'),
       }
@@ -500,7 +557,9 @@ function homeworkTool(ctx, env) {
       lines.push('', '正文：', String(detail.assignmentContent ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '（空）')
       if (resources.length > 0) {
         lines.push('', '下载地址：')
-        for (const resource of resources) lines.push(`- ${resource.name}.${resource.ext}${resource.url ? `：${resource.url}` : ''}`)
+        for (const resource of resources) {
+          lines.push(`- ${attachmentName(resource.name, resource.ext)}${resource.url ? `：${resource.url}` : ''}`)
+        }
       }
       return {
         activityId,
@@ -519,7 +578,7 @@ function homeworkTool(ctx, env) {
         isOvertimeCommit: detail.isOvertimeCommit,
         submitTime: detail.submitTime ?? null,
         assignmentScore: typeof detail.assignmentScore === 'number' ? detail.assignmentScore : null,
-        resources: resources.map((resource) => ({ name: `${resource.name}.${resource.ext}`, url: resource.url ?? '' })),
+        resources: resources.map((resource) => ({ name: attachmentName(resource.name, resource.ext), url: resource.url ?? '' })),
         report: lines.join('\n'),
       }
     },
@@ -590,7 +649,12 @@ function uploadTool(ctx, env) {
       const { userinfo } = await session(ctx, env, exec.signal)
       const deps = { fetch: env.fetch, signal: exec.signal, maxBytes: env.maxUploadBytes, mimeType: args.mimeType }
       const result = filePath.length > 0
-        ? await uploadLocalFile(userinfo, filePath, { ...deps, baseDir: typeof env.cwd === 'function' ? env.cwd() : undefined })
+        ? await uploadLocalFile(userinfo, filePath, {
+          ...deps,
+          // The calling session's workspace wins; the profile's first registered
+          // workspace is only a fallback for callers without an agent.
+          baseDir: sessionCwd(exec) ?? (typeof env.cwd === 'function' ? env.cwd() : undefined),
+        })
         : await uploadFromUrl(userinfo, { url, filename: args.filename, mimeType: args.mimeType }, deps)
       return {
         resourceId: result.resourceId,
@@ -780,7 +844,7 @@ function loginTool(ctx, env) {
  * @returns the tool definitions.
  */
 export function toolDefinitions(ctx, env) {
-  return [
+  const definitions = [
     undoneListTool(ctx, env),
     worksTool(ctx, env),
     homeworkTool(ctx, env),
@@ -790,6 +854,13 @@ export function toolDefinitions(ctx, env) {
     accountTool(ctx, env),
     loginTool(ctx, env),
   ]
+  // One seam, so no future field can reintroduce the lossless-JSON failure.
+  return definitions.map((definition) => ({
+    ...definition,
+    async execute(args, exec) {
+      return jsonSafe(await definition.execute(args, exec))
+    },
+  }))
 }
 
 export { pendingLogins }

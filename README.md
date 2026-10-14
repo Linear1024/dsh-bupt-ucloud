@@ -77,9 +77,14 @@ dsh plugin --profile web add /absolute/path/to/dsh-bupt-ucloud
   临时文件 + rename 原子写。
 - **平台接口**：`/ykt-site/**`、`/blade-source/**`、`/ykt-basics/oauth/token`，请求头与
   参数按平台前端一致；课程 ID 一律按字符串比较（19 位 ID 超出 double 精度）。
-- **上传**：本地路径直接读文件（相对路径以会话工作区为基准，取不到工作区时才退回宿主进程 cwd），
+- **上传**：本地路径直接读文件，相对路径以**调用会话的工作区**为基准
+  （`exec.agent.session.header.cwd`，与内置 fs 工具同一来源；取不到时才退回 profile 的第一个工作区）；
   URL 则边读边计数，两者都受 `maxBytes`（默认 100 MB）约束，越界立即中止且不上传；
   统一用平台 `FormData` 提交，附件名默认沿用源文件自己的名字。
+- **令牌边界**：access token 距到期 60 秒内即视为过期并先续期（与工作区 CLI 的规则一致），
+  避免"刚过期"那一次请求白挨一个 `HTTP 401`。
+- **返回值**：所有工具的结构化返回值统一过一遍 `undefined → null`，
+  因为 DSH 要求工具结果是**无损 JSON**——平台字段缺失时返回 `null`，而不是让整次调用报错。
 - **设置命名空间**：宿主 `Config` 里 `username` 是 `.volatile()` 字段，因此 Plugins 页
   的表单可以实时编辑它；`vendor/schemastery.js` 是 `@deepseek-ai/schemastery@3.18.4`
   的单文件打包（生成方式见 `vendor/README.md`），让本插件无需声明宿主依赖即可导出 schema。
@@ -87,7 +92,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-bupt-ucloud
 ## 验证
 
 ```bash
-node tests/host.test.mjs    # 58 项：登录/续期/验证码、状态存储、八个工具、设置页路由、apply 接线
+node tests/host.test.mjs    # 62 项：登录/续期/验证码、状态存储、八个工具、设置页路由、apply 接线
 node tests/client.test.mjs  # 16 项：真实 React + 真实设置组件，挂载设置卡片并驱动其 RPC 行为
 ```
 
@@ -117,6 +122,16 @@ bundle 与 patch 正常组合、Host 模块加载成功、客户端 bundle 出�
 - `ucloud_upload` 会在宿主进程里读本地文件、或按模型给出的 URL 下载文件，这是一个
   SSRF / 本地文件外发面（可访问内网地址、可读本机文件），随后把内容上传到教学云；
   只对可信的来源使用，且单次调用有大小上限（默认 100 MB，超过即中止且不上传）。
+
+## 已知限制
+
+- **不能切换账号**：账号固定来自设置页 + 凭据库（这也是它和工作区 CLI 唯一的定位差异；
+  需要多账号切换时请用 `tools/ucloud-cli.mjs`）。
+- **没有删除资源的接口**：上传成功但没用上的附件无法通过本插件删除（平台没有对应 API），
+  只会在教学云里留一个游离资源。
+- **没有 dry-run**：`ucloud_submit` 一调用就是真提交；约定是先把 `resourceId` 报给用户确认再提交。
+- **验证码需要人读图**：未配置 OCR 令牌时，登录会停下并给出图片路径与 `captchaId`，
+  由模型（`read_image`）或用户读出文字后调用 `ucloud_login` 继续。
 
 ## 许可
 

@@ -41,6 +41,9 @@ const OCR_ENDPOINT = 'https://ocr.byrdocs.org/ocr'
 /** Default ceiling on one downloaded-and-uploaded attachment. */
 export const DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
+/** Renew a token this long before it actually expires (the CLI's 60-second rule). */
+export const TOKEN_SKEW_SECONDS = 60
+
 /** The two credential references this plugin reads (see index.js). */
 export const PASSWORD_REF = 'UCLOUD_PASSWORD'
 export const OCR_TOKEN_REF = 'UCLOUD_OCR_TOKEN'
@@ -74,15 +77,23 @@ function base64UrlDecode(value) {
 }
 
 /**
- * Whether a JWT is absent, malformed, or past its `exp`.
+ * Whether a JWT is absent, malformed, or within `skewSeconds` of its `exp`.
+ *
+ * A token that is still valid for a few more seconds is treated as expired: the
+ * request it authorizes can land after the platform has stopped accepting it,
+ * which shows up as a one-off `HTTP 401` that only a retry fixes. The workspace
+ * CLI applies the same 60-second rule.
+ *
  * @param token - the JWT to inspect.
- * @returns true when the token cannot be used.
+ * @param skewSeconds - treat a token expiring within this window as expired.
+ * @returns true when the token cannot be relied on for a new request.
  */
-export function isExpired(token) {
+export function isExpired(token, skewSeconds = 0) {
   if (typeof token !== 'string' || token.length === 0) return true
   try {
     const payload = JSON.parse(base64UrlDecode(token.split('.')[1]))
-    return typeof payload.exp !== 'number' || payload.exp < Date.now() / 1000
+    const deadline = Date.now() / 1000 + (Number.isFinite(skewSeconds) ? skewSeconds : 0)
+    return typeof payload.exp !== 'number' || payload.exp < deadline
   } catch {
     return true
   }
@@ -371,8 +382,8 @@ export async function getToken(options) {
   if (!force && store) {
     const state = await store.read()
     const cached = state.users[username]?.userinfo
-    if (cached && !isExpired(cached.refresh_token)) {
-      if (!isExpired(cached.access_token)) return cached
+    if (cached && !isExpired(cached.refresh_token, TOKEN_SKEW_SECONDS)) {
+      if (!isExpired(cached.access_token, TOKEN_SKEW_SECONDS)) return cached
       try {
         const next = await refresh(cached.refresh_token, undefined, fetchImpl, signal)
         await cacheUserinfo(store, username, next)
