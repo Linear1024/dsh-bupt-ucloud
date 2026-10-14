@@ -65,6 +65,18 @@ export function apply(ctx, config) {
     /** Deferred so a test (or a future fetch seam) can replace the global. */
     fetch: (input, init) => globalThis.fetch(input, init),
     maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
+    /**
+     * The session's workspace: what a tool's relative path resolves against.
+     * The first registered workspace, else the harness process's own cwd.
+     */
+    cwd: () => {
+      const registry = safeGet(ctx, 'workspaceRegistry')
+      const workspaces = registry && typeof registry.list === 'function' ? registry.list() : []
+      const first = Array.isArray(workspaces)
+        ? workspaces.find((workspace) => typeof workspace?.path === 'string' && workspace.path.length > 0)
+        : undefined
+      return first?.path ?? process.cwd()
+    },
     /** The configured 学号, read live from the settings section. */
     username: () => {
       const value = config?.username

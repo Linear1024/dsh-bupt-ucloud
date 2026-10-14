@@ -6,7 +6,7 @@
  * Run: node tests/host.test.mjs
  */
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -908,6 +908,36 @@ await check('ucloud_upload from a local path keeps the file\'s own name and MIME
   assert.equal(result.resourceId, 'RID-LOCAL')
   assert.equal(result.filename, '第二周书面作业.pdf')
   assert.equal(result.mimeType, 'application/pdf')
+})
+
+await check('a relative upload path resolves against the session workspace', async () => {
+  const store = await tempStore()
+  await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
+  const base = await mkdtemp(path.join(tmpdir(), 'dsh-ucloud-ws-'))
+  await mkdir(path.join(base, '作业附件'), { recursive: true })
+  await writeFile(path.join(base, '作业附件', '第二次作业.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+  let seen = null
+  const fetchImpl = mockFetch([
+    { method: 'POST', match: 'resource/upload/biz', reply: ({ init }) => {
+      seen = init.body.get('file')
+      return json({ success: true, data: 'RID-REL' })
+    } },
+    { method: 'GET', match: 'resource/preview-url', reply: () => json({ data: {} }) },
+  ])
+  const env = { store, fetch: fetchImpl, username: () => '20210001', cwd: () => base }
+  const result = await callTool('ucloud_upload', {
+    ctx: fakeCtx({ credentials: CREDENTIALS }),
+    env,
+    args: { path: '作业附件/第二次作业.png' },
+  })
+  assert.equal(result.resourceId, 'RID-REL')
+  assert.equal(seen.name, '第二次作业.png')
+  assert.equal(seen.type, 'image/png')
+  // A path outside the workspace is still refused by its own error.
+  await assert.rejects(
+    () => callTool('ucloud_upload', { ctx: fakeCtx({ credentials: CREDENTIALS }), env, args: { path: '不存在.png' } }),
+    (error) => error.code === 'file-not-found' && error.message.includes(path.join(base, '不存在.png')),
+  )
 })
 
 await check('ucloud_upload refuses both or neither source', async () => {

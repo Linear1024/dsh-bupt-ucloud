@@ -570,7 +570,7 @@ function uploadTool(ctx, env) {
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: 'Local file path to upload (absolute, or relative to the working directory).' },
+        path: { type: 'string', description: 'Local file path to upload: absolute, or relative to the session workspace (the harness process working directory when no workspace is registered).' },
         url: { type: 'string', description: 'File URL to download and upload.' },
         filename: { type: 'string', description: 'Stored filename; defaults to the source file\'s own name and is normally left unset.' },
         mimeType: { type: 'string', description: 'File MIME type; guessed from the extension when omitted.' },
@@ -590,7 +590,7 @@ function uploadTool(ctx, env) {
       const { userinfo } = await session(ctx, env, exec.signal)
       const deps = { fetch: env.fetch, signal: exec.signal, maxBytes: env.maxUploadBytes, mimeType: args.mimeType }
       const result = filePath.length > 0
-        ? await uploadLocalFile(userinfo, filePath, deps)
+        ? await uploadLocalFile(userinfo, filePath, { ...deps, baseDir: typeof env.cwd === 'function' ? env.cwd() : undefined })
         : await uploadFromUrl(userinfo, { url, filename: args.filename, mimeType: args.mimeType }, deps)
       return {
         resourceId: result.resourceId,

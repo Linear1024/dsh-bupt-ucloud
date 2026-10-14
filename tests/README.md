@@ -3,7 +3,7 @@
 Two self-contained suites (no network, no harness install):
 
 ```bash
-node tests/host.test.mjs     # 51 checks — host half
+node tests/host.test.mjs     # 58 checks — host half
 node tests/client.test.mjs   # 16 checks — client half
 ```
 

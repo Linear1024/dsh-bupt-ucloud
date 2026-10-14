@@ -53,7 +53,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-bupt-ucloud
 | `ucloud_works` | 遍历所有课程，列出**已提交 / 未提交**清单（可加 `filter`、`course`）——用于核对某次提交是否真的落到「已提交」里 |
 | `ucloud_homework` | 按 `activityId` 读详情：正文、课程、章节、开始/截止、`assignmentStatus`（`0`=已提交 / `99`=未提交）、`isOvertimeCommit`（`0`=可补交 / `1`=不可）、提交时间、评分、题目附件与下载地址；`raw=true` 可打印平台返回的**全部原始字段**（可用 `fields` 过滤） |
 | `ucloud_search` | 用标题作为关键字反查作业所属课程 |
-| `ucloud_upload` | 上传附件，返回 `resourceId`：给 `path` 传本地文件，或给 `url` 传远程文件；**默认沿用源文件自己的名字**，MIME 按扩展名识别；单次上限 100 MB |
+| `ucloud_upload` | 上传附件，返回 `resourceId`：给 `path` 传本地文件（绝对路径，或相对**当前会话工作区**），或给 `url` 传远程文件；**默认沿用源文件自己的名字**，MIME 按扩展名识别；单次上限 100 MB |
 | `ucloud_submit` | 提交作业（文字 + 附件 `resourceId`）——**会真实提交** |
 | `ucloud_account` | 账号状态（学号/姓名/userId/角色）；`verify=true` 时实际登录一次；遇到验证码会返回图片路径与 `captchaId` |
 | `ucloud_login` | 用 `captchaId` + 验证码文字完成一次被验证码拦住的登录（5 分钟内有效） |
@@ -77,8 +77,9 @@ dsh plugin --profile web add /absolute/path/to/dsh-bupt-ucloud
   临时文件 + rename 原子写。
 - **平台接口**：`/ykt-site/**`、`/blade-source/**`、`/ykt-basics/oauth/token`，请求头与
   参数按平台前端一致；课程 ID 一律按字符串比较（19 位 ID 超出 double 精度）。
-- **上传**：本地路径直接读文件，URL 则边读边计数，两者都受 `maxBytes`（默认 100 MB）
-  约束，越界立即中止且不上传；统一用平台 `FormData` 提交。
+- **上传**：本地路径直接读文件（相对路径以会话工作区为基准，取不到工作区时才退回宿主进程 cwd），
+  URL 则边读边计数，两者都受 `maxBytes`（默认 100 MB）约束，越界立即中止且不上传；
+  统一用平台 `FormData` 提交，附件名默认沿用源文件自己的名字。
 - **设置命名空间**：宿主 `Config` 里 `username` 是 `.volatile()` 字段，因此 Plugins 页
   的表单可以实时编辑它；`vendor/schemastery.js` 是 `@deepseek-ai/schemastery@3.18.4`
   的单文件打包（生成方式见 `vendor/README.md`），让本插件无需声明宿主依赖即可导出 schema。
@@ -86,7 +87,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-bupt-ucloud
 ## 验证
 
 ```bash
-node tests/host.test.mjs    # 57 项：登录/续期/验证码、状态存储、八个工具、设置页路由、apply 接线
+node tests/host.test.mjs    # 58 项：登录/续期/验证码、状态存储、八个工具、设置页路由、apply 接线
 node tests/client.test.mjs  # 16 项：真实 React + 真实设置组件，挂载设置卡片并驱动其 RPC 行为
 ```
 

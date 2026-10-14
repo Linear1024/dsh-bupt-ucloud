@@ -823,12 +823,19 @@ export async function uploadFromUrl(userinfo, file, deps = {}) {
  *
  * @param userinfo - platform user info.
  * @param filePath - absolute or relative path to the file.
- * @param deps - fetch seam, cancellation signal, size ceiling, MIME override.
+ * A relative `filePath` resolves against `deps.baseDir` — the session workspace
+ * the caller supplies — and only falls back to the process working directory
+ * when no base is given. Without this, a relative path would silently mean
+ * "relative to wherever the harness happened to be launched".
+ *
+ * @param deps - fetch seam, cancellation signal, size ceiling, MIME override, `baseDir`.
  * @returns the uploaded resource id, filename, MIME type and preview URL.
  */
 export async function uploadLocalFile(userinfo, filePath, deps = {}) {
   const maxBytes = Number.isFinite(deps.maxBytes) && deps.maxBytes > 0 ? deps.maxBytes : DEFAULT_MAX_UPLOAD_BYTES
-  const absolute = path.resolve(filePath)
+  const absolute = typeof deps.baseDir === 'string' && deps.baseDir.length > 0
+    ? path.resolve(deps.baseDir, filePath)
+    : path.resolve(filePath)
   let info
   try {
     info = await stat(absolute)
