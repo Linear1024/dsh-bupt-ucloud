@@ -1,5 +1,10 @@
 # dsh-bupt-ucloud
 
+> **作者正在学习 DSH 插件开发中。** 目前该插件完全为 DSH 根据
+> [YouXam/ucloud](https://github.com/YouXam/ucloud) 项目进行封装；
+> 如有 bug 请务必[提交 issue](https://github.com/Linear1024/dsh-bupt-ucloud/issues)
+> 或联系作者，稍后会进行人工审查与修改。
+
 北邮教学云平台（ucloud）的 DSH 插件：**学号、密码在「设置 → 插件」页配置**，配置完成后
 DSH 可以直接查询未完成作业、读取作业详情、核对已交/未交、上传附件并提交作业。
 
