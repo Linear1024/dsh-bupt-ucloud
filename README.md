@@ -1,12 +1,12 @@
 # dsh-bupt-ucloud
 
-把 [YouXam/ucloud](https://github.com/YouXam/ucloud)（北邮教学云平台的 Cloudflare Worker 代理）封装成 DSH 插件：
-**学号、密码在「设置 → 插件」页配置**，配置完成后 DSH 可以直接查询未完成作业、读取作业详情、搜索课程、上传附件并提交作业。
+北邮教学云平台（ucloud）的 DSH 插件：**学号、密码在「设置 → 插件」页配置**，配置完成后
+DSH 可以直接查询未完成作业、读取作业详情、核对已交/未交、上传附件并提交作业。
 
 | 面 | 位置 |
 |---|---|
 | 设置页 | 「设置 → 插件」→ 插件列表里的 **dsh-bupt-ucloud** → 它自己的配置页（`plugins.bundle.config`，key `dsh-bupt-ucloud`，标题取自 `locale/zh.json` 的「教学云」） |
-| Agent 工具 | `ucloud_undone_list`、`ucloud_homework`、`ucloud_search`、`ucloud_upload`、`ucloud_submit`、`ucloud_account` |
+| Agent 工具 | `ucloud_undone_list`、`ucloud_works`、`ucloud_homework`、`ucloud_search`、`ucloud_upload`、`ucloud_submit`、`ucloud_account`、`ucloud_login` |
 | 宿主路由 | `POST /dsh-bupt-ucloud/verify`（设置页「测试登录」按钮使用） |
 
 设置页与工具读取同一份账号配置，因此页面显示的和模型用到的账号永远一致。
@@ -31,7 +31,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-bupt-ucloud
 |---|---|---|
 | 学号 | 配置档（profile）设置段 `ucloud.username` | 统一认证学号 |
 | 密码 | 本机凭据库 | 统一认证密码，**不会**写入配置文件 |
-| 验证码识别令牌 | 本机凭据库 | 可选；统一认证出现验证码时用 Byrdocs OCR 自动识别 |
+| 验证码识别令牌 | 本机凭据库 | 可选；填了就能自动识别验证码，不填则改为人工/视觉识别（见下） |
 
 密码与验证码令牌只写不读：页面仅显示「已配置 / 未配置」，保存后再次进入页面也不会回显。
 
@@ -40,44 +40,45 @@ dsh plugin --profile web add /absolute/path/to/dsh-bupt-ucloud
 该路由与 `/api` 一样经过部署自身的浏览器信任检查（`ctx.connection.requestRejection`），
 检查不可用时以 503 失败关闭，且响应里永远不会出现凭据。
 
-> **关于验证码**：北邮统一认证在部分网络环境/风控下会要求输入验证码。此时若未配置
-> 验证码识别令牌，登录会失败并提示 `captcha-required`。请在设置页填写 Byrdocs OCR
-> token（[ocr.byrdocs.org](https://ocr.byrdocs.org)），或更换网络出口后重试。
+> **关于验证码**：北邮统一认证在部分网络环境/风控下会要求输入验证码。有两种应对方式：
+> 1. 在设置页填 Byrdocs OCR token（[ocr.byrdocs.org](https://ocr.byrdocs.org)），之后全自动；
+> 2. 不填也行——插件会把验证码图片存到 `$DSH_HOME/ucloud/captcha-<id>.png`，模型可以用
+>    `read_image` 读它（或让你看一眼后把文字告诉模型），再调用 `ucloud_login` 完成登录。
 
 ## 工具
 
 | 工具 | 作用 |
 |---|---|
-| `ucloud_undone_list` | 未完成的作业 / 测验 / 问卷，附带所属课程、教师与截止时间；课程信息会缓存到本地 |
-| `ucloud_homework` | 按 `activityId` 读取作业详情：正文、课程、截止时间、`assignmentStatus`（`0`=已提交 / `99`=未提交）、`isOvertimeCommit`（`0`=可逾期补交 / `1`=不可）、提交时间、评分与附件下载地址；同时返回这些原始字段供复核 |
-| `ucloud_search` | 用标题作为关键字反向搜索作业所属课程 |
-| `ucloud_upload` | 从 URL 下载文件并上传为作业附件，返回 `resourceId`（默认上限 100 MB） |
+| `ucloud_undone_list` | 未完成的作业 / 测验 / 问卷：课程、教师、截止时间；**24 小时内截止的单独成段（🔴）**，已过期且不可补交的另列一段、不计入待办 |
+| `ucloud_works` | 遍历所有课程，列出**已提交 / 未提交**清单（可加 `filter`、`course`）——用于核对某次提交是否真的落到「已提交」里 |
+| `ucloud_homework` | 按 `activityId` 读详情：正文、课程、章节、开始/截止、`assignmentStatus`（`0`=已提交 / `99`=未提交）、`isOvertimeCommit`（`0`=可补交 / `1`=不可）、提交时间、评分、题目附件与下载地址；`raw=true` 可打印平台返回的**全部原始字段**（可用 `fields` 过滤） |
+| `ucloud_search` | 用标题作为关键字反查作业所属课程 |
+| `ucloud_upload` | 上传附件，返回 `resourceId`：给 `path` 传本地文件，或给 `url` 传远程文件；**默认沿用源文件自己的名字**，MIME 按扩展名识别；单次上限 100 MB |
 | `ucloud_submit` | 提交作业（文字 + 附件 `resourceId`）——**会真实提交** |
-| `ucloud_account` | 报告账号配置状态；`verify=true` 时实际登录一次并返回姓名、角色、令牌有效期 |
+| `ucloud_account` | 账号状态（学号/姓名/userId/角色）；`verify=true` 时实际登录一次；遇到验证码会返回图片路径与 `captchaId` |
+| `ucloud_login` | 用 `captchaId` + 验证码文字完成一次被验证码拦住的登录（5 分钟内有效） |
 
 工具调用失败时返回稳定的错误码（`missing-username`、`missing-password`、`captcha-required`、
-`login-failed`、`ocr-failed`、`upload-failed`、`submit-failed`、`upstream-error` 等）；
-未配置账号时的报错会直接指向设置页路径。
+`captcha-expired`、`login-failed`、`ocr-failed`、`file-too-large`、`upload-failed`、
+`submit-failed`、`upstream-error` 等）；未配置账号时的报错会直接指向设置页路径。
+
+推荐流程：`ucloud_undone_list` 看待办 → `ucloud_homework` 读题目 → `ucloud_upload` 传附件
+（先把 `resourceId` 报给用户确认）→ `ucloud_submit` 提交 → `ucloud_homework` 复核
+`assignmentStatus` 是否变成 `0` → `ucloud_works` 确认它出现在「已提交」列表里。
 
 ## 实现说明
 
-原 Worker 的每个 HTTP 路由都在插件内以同样的线上格式重放，区别只有承载方式：
-
-| 原 Worker | 本插件 |
-|---|---|
-| HTTP Basic 鉴权（每次请求带学号密码） | 设置页一次配置：学号进配置段，密码/OCR 令牌进凭据库 |
-| `env.DB`（D1）缓存令牌与课程信息 | `$DSH_HOME/ucloud/state.json`（目录 0700、文件 0600，原子写入） |
-| `env.OCR_TOKEN` | 设置页的「验证码识别令牌」 |
-| Worker fetch 处理器 | Host 端 `ctx.tools.register` 的六个工具 + 一条 `webServer` 路由 |
-| 无前端 | Web UI 里本 bundle 页面上的 **教学云** 配置表单（`plugins.bundle.config`） |
-
-- **登录**：移植 [`@byrdocs/bupt-auth`](https://jsr.io/@byrdocs/bupt-auth) 0.3.0（MIT）的
-  CAS 统一认证流程——取 cookie/execution、必要时用 OCR 解验证码、POST 登录、用 ticket
-  换取教学云令牌、读取角色并刷新出可用 access token。
-- **令牌复用**：优先用缓存 access token；过期则用 refresh token 续期；refresh 被拒则重新登录。
-  密码或 OCR 令牌一变，缓存的令牌立即作废（订阅 `credentials/reference-updated`）。
-- **上传**：原 Worker 手写 multipart 边界并流式转发；Node 侧改用平台 `FormData`
-  （undici），并在下载前/下载后都用 `maxBytes` 兜底，避免一次调用把超大文件读进内存。
+- **凭据**：学号在配置档设置段，密码与验证码令牌在本机凭据库；两者都不进配置文件。
+- **登录**：CAS 统一认证——取 cookie/execution → 需要验证码时走 OCR 或人工识别 →
+  POST 登录 → ticket 换取教学云令牌 → 读取角色 → 刷新出可用 access token。
+- **会话**：优先用缓存 access token；过期用 refresh token 续期；续期被拒则重新登录；
+  密码或验证码令牌变更时立即清空缓存（订阅 `credentials/reference-updated`）。
+- **令牌与课程缓存**：`$DSH_HOME/ucloud/<profile>.json`，目录 `0700`、文件 `0600`、
+  临时文件 + rename 原子写。
+- **平台接口**：`/ykt-site/**`、`/blade-source/**`、`/ykt-basics/oauth/token`，请求头与
+  参数按平台前端一致；课程 ID 一律按字符串比较（19 位 ID 超出 double 精度）。
+- **上传**：本地路径直接读文件，URL 则边读边计数，两者都受 `maxBytes`（默认 100 MB）
+  约束，越界立即中止且不上传；统一用平台 `FormData` 提交。
 - **设置命名空间**：宿主 `Config` 里 `username` 是 `.volatile()` 字段，因此 Plugins 页
   的表单可以实时编辑它；`vendor/schemastery.js` 是 `@deepseek-ai/schemastery@3.18.4`
   的单文件打包（生成方式见 `vendor/README.md`），让本插件无需声明宿主依赖即可导出 schema。
@@ -85,7 +86,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-bupt-ucloud
 ## 验证
 
 ```bash
-node tests/host.test.mjs    # 51 项：登录/续期/验证码、状态存储、六个工具、设置页路由、apply 接线
+node tests/host.test.mjs    # 57 项：登录/续期/验证码、状态存储、八个工具、设置页路由、apply 接线
 node tests/client.test.mjs  # 16 项：真实 React + 真实设置组件，挂载设置卡片并驱动其 RPC 行为
 ```
 
@@ -103,21 +104,23 @@ bundle 与 patch 正常组合、Host 模块加载成功、客户端 bundle 出�
 ## 安全
 
 - 学号只来自插件的设置段，**没有**环境变量或凭据兜底：设置页显示的就是工具使用的账号。
-- 密码与 OCR 令牌只存在于本机凭据库（`$DSH_HOME/.credentials.yaml`，由
+- 密码与验证码令牌只存在于本机凭据库（`$DSH_HOME/.credentials.yaml`，由
   `@deepseek-ai/dsh-credentials-local` 管理），不进入配置档。
 - 本地状态文件含 refresh token：目录 `0700`、文件 `0600`、临时文件 + rename 原子替换。
   每个配置档一份（`$DSH_HOME/ucloud/<profile>.json`，无配置档时为 `state.json`），
-  按学号分条缓存；密码或 OCR 令牌变更会清空缓存。
+  按学号分条缓存；密码或验证码令牌变更会清空缓存。
+- 验证码图片同样 `0600` 写入插件自己的目录，登录成功后立即删除。
 - 任何返回给浏览器或模型的内容都不含凭据；`ucloud_account` 只报告"是否已配置"。
   验证码识别失败只回固定原因，不会把带 token 的 OCR 请求 URL 带进错误信息。
 - 唯一的路由 `/dsh-bupt-ucloud/verify` 只做登录校验并返回姓名/角色，且有请求体大小上限。
-- `ucloud_upload` 会在宿主进程里按模型给出的 URL 下载文件，这是一个 SSRF 面（可访问
-  内网地址），随后还要把内容上传到教学云；只对可信 URL 使用，且单次调用有大小上限
-  （默认 100 MB，超过即中止下载且不上传）。
+- `ucloud_upload` 会在宿主进程里读本地文件、或按模型给出的 URL 下载文件，这是一个
+  SSRF / 本地文件外发面（可访问内网地址、可读本机文件），随后把内容上传到教学云；
+  只对可信的来源使用，且单次调用有大小上限（默认 100 MB，超过即中止且不上传）。
 
 ## 许可
 
-GPL-3.0（见 [LICENSE](LICENSE)）：本插件移植自 GPL-3.0 的 [YouXam/ucloud](https://github.com/YouXam/ucloud)，
-其中的登录流程移植自 MIT 许可的 [byrdocs/bupt-auth](https://jsr.io/@byrdocs/bupt-auth) 0.3.0
+GPL-3.0（见 [LICENSE](LICENSE)）：接口封装源自 GPL-3.0 的
+[YouXam/ucloud](https://github.com/YouXam/ucloud)，登录流程源自 MIT 的
+[byrdocs/bupt-auth](https://jsr.io/@byrdocs/bupt-auth) 0.3.0
 （源码可用 `npm pack @jsr/byrdocs__bupt-auth --registry=https://npm.jsr.io` 取得）。
 `vendor/schemastery.js` 打包自 MIT 许可的 `@deepseek-ai/schemastery`。

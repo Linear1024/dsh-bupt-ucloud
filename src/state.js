@@ -1,11 +1,10 @@
 /**
  * Local state for the ucloud plugin.
  *
- * The upstream worker kept two things in D1: the per-user login token (so an
- * expired access token could be refreshed instead of re-running the CAS login
- * and its captcha) and a cache of the course info resolved for one homework id.
- * A plugin has no D1, so both live in one JSON document under
- * `$DSH_HOME/ucloud/state.json`.
+ * Two things are kept: the per-account login token (so an expired access token
+ * can be refreshed instead of re-running the CAS login and its captcha) and a
+ * cache of the course info resolved for one activity id. Both live in one JSON
+ * document under `$DSH_HOME/ucloud/`.
  *
  * The document holds refresh tokens, so it is written `0600` inside a `0700`
  * directory and never leaves the machine. Reads are cheap and always fresh;
@@ -15,7 +14,7 @@
  * @module dsh-bupt-ucloud/state
  */
 
-import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -47,6 +46,44 @@ export function dataRoot(home = process.env.DSH_HOME) {
 export function statePath(home = process.env.DSH_HOME, profile = undefined) {
   const name = typeof profile === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(profile) ? profile : undefined
   return path.join(dataRoot(home), name === undefined ? 'state.json' : `${name}.json`)
+}
+
+/**
+ * Where one pending login's captcha image is saved.
+ *
+ * The image is a throwaway PNG a human or a vision model reads; it lives beside
+ * the state document so a login never writes outside the plugin's own directory.
+ *
+ * @param id - pending-login id (sanitized: it must stay one path segment).
+ * @param home - override for `$DSH_HOME` (tests).
+ * @returns absolute path of the captcha image.
+ */
+export function captchaImagePath(id, home = process.env.DSH_HOME) {
+  const safe = typeof id === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(id) ? id : 'pending'
+  return path.join(dataRoot(home), `captcha-${safe}.png`)
+}
+
+/**
+ * Save one captcha image with the same 0700/0600 discipline as the state file.
+ * @param id - pending-login id.
+ * @param bytes - PNG bytes.
+ * @param home - override for `$DSH_HOME` (tests).
+ * @returns the absolute path written.
+ */
+export async function writeCaptchaImage(id, bytes, home = process.env.DSH_HOME) {
+  const file = captchaImagePath(id, home)
+  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 })
+  await writeFile(file, bytes, { mode: 0o600 })
+  return file
+}
+
+/**
+ * Delete a file, ignoring the case where it is already gone.
+ * @param file - absolute path.
+ */
+export async function removeFileQuietly(file) {
+  if (typeof file !== 'string' || file.length === 0) return
+  try { await unlink(file) } catch {}
 }
 
 /** A state document with every section present. */

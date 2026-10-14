@@ -1,19 +1,17 @@
 /**
  * `dsh-bupt-ucloud` — Host half.
  *
- * Wraps the [YouXam/ucloud](https://github.com/YouXam/ucloud) worker (GPL-3.0)
- * as an in-process DSH plugin: 学号 lives in this plugin's own settings section
- * (edited on the Plugins page), 密码 and the optional 验证码识别令牌 live in the
- * deployment's credential store, and the platform itself is reached with the
- * ported client in `src/ucloud.js`.
+ * 学号 lives in this plugin's own settings section (edited on the Plugins page),
+ * 密码 and the optional 验证码识别令牌 live in the deployment's credential store,
+ * and the platform itself is reached through the client in `src/ucloud.js`.
  *
  * Two surfaces share one account resolution, so the page and the model can
  * never disagree about which account is configured:
  *
  * | Surface | Where |
  * |---|---|
- * | Agent tools | `ucloud_undone_list`, `ucloud_homework`, `ucloud_search`, `ucloud_upload`, `ucloud_submit`, `ucloud_account` |
- * | Web UI | the **教学云** card on Settings → Plugins (`plugins.item`), plus `POST /dsh-bupt-ucloud/verify` for its login check |
+ * | Agent tools | the `ucloud_*` tools built in `src/tools.js` |
+ * | Web UI | this bundle's settings form on Settings → Plugins (`plugins.bundle.config`), plus `POST /dsh-bupt-ucloud/verify` for its login check |
  *
  * @module dsh-bupt-ucloud
  */

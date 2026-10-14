@@ -6,7 +6,7 @@
  * Run: node tests/host.test.mjs
  */
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -414,7 +414,7 @@ await check('ucloud_undone_list reports an empty term plainly', async () => {
     env: { store, fetch: fetchImpl, username: () => '20210001' },
   })
   assert.equal(result.count, 0)
-  assert.ok(result.report.includes('没有未完成'))
+  assert.ok(result.report.includes('（没有未完成的作业）'))
 })
 
 await check('ucloud_undone_list surfaces a platform refusal', async () => {
@@ -464,18 +464,19 @@ await check('ucloud_homework reports submission state from assignmentStatus, not
     const fetchImpl = mockFetch([detailRoute(data), ...listingRoutes.slice(1)])
     return callTool('ucloud_homework', { ctx: fakeCtx({ credentials: CREDENTIALS }), env: { ...env, fetch: fetchImpl }, args: { activityId: 'A1' } })
   }
-  const submitted = await run({ ...base, assignmentStatus: 0, isOvertimeCommit: 1 })
-  assert.ok(submitted.report.includes('已提交（assignmentStatus=0）'), submitted.report)
-  assert.ok(submitted.report.includes('不可（isOvertimeCommit=1）'))
+  const submitted = await run({ ...base, assignmentStatus: 0, isOvertimeCommit: 1, noSubmitNum: 2, totalNum: 40 })
+  assert.ok(submitted.report.includes('assignmentStatus=0（已提交） 已提交 38/40'), submitted.report)
+  assert.ok(submitted.report.includes('可逾期交 : 1（不能补交）'))
   assert.equal(submitted.assignmentStatus, 0)
+  assert.equal(submitted.totalNum, 40)
   const undone = await run({ ...base, assignmentStatus: 99, isOvertimeCommit: 0, submitTime: '2025-12-31T10:00:00' })
-  assert.ok(undone.report.includes('未提交（assignmentStatus=99）'), undone.report)
-  assert.ok(undone.report.includes('可以（isOvertimeCommit=0）'))
-  assert.ok(undone.report.includes('提交时间: 2025-12-31 10:00'))
+  assert.ok(undone.report.includes('assignmentStatus=99（未提交）'), undone.report)
+  assert.ok(undone.report.includes('可逾期交 : 0（可以补交）'))
+  assert.ok(undone.report.includes('提交时间 : 2025-12-31 10:00'))
   const graded = await run({ ...base, assignmentStatus: 0, assignmentScore: 88 })
-  assert.ok(graded.report.includes('评分: 88'))
+  assert.ok(graded.report.includes('评分     : 88'))
   const ungraded = await run({ ...base, assignmentStatus: 0, assignmentScore: 0 })
-  assert.ok(!ungraded.report.includes('评分:'), 'a 0 score reads as ungraded, not as a grade')
+  assert.ok(!ungraded.report.includes('评分'), 'a 0 score reads as ungraded, not as a grade')
 })
 
 await check('ucloud_homework does not claim a state the platform did not report', async () => {
@@ -494,10 +495,10 @@ await check('ucloud_homework does not claim a state the platform did not report'
   })
   assert.ok(result.report.includes('平台未返回 assignmentStatus'), result.report)
   assert.ok(result.report.includes('平台未返回 isOvertimeCommit'))
-  assert.ok(!result.report.includes('已提交') && !result.report.includes('未提交'))
+  assert.ok(!result.report.includes('（已提交）') && !result.report.includes('（未提交）'))
 })
 
-await check('course lookup compares activity ids loosely, as upstream did', async () => {
+await check('course lookup compares activity ids loosely across wire types', async () => {
   const store = await tempStore()
   await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
   const numeric = '2025210163'
@@ -722,7 +723,8 @@ await check('ucloud_account verify=true reports an unconfigured account instead 
 await check('every tool declares an output schema, timeout and JSON-schema parameters', async () => {
   const definitions = toolDefinitions(fakeCtx(), { store: await tempStore(), fetch: mockFetch([]), username: () => '' })
   assert.deepEqual(definitions.map((tool) => tool.name), [
-    'ucloud_undone_list', 'ucloud_homework', 'ucloud_search', 'ucloud_upload', 'ucloud_submit', 'ucloud_account',
+    'ucloud_undone_list', 'ucloud_works', 'ucloud_homework', 'ucloud_search',
+    'ucloud_upload', 'ucloud_submit', 'ucloud_account', 'ucloud_login',
   ])
   for (const tool of definitions) {
     assert.equal(tool.parameters.type, 'object', `${tool.name} parameters are object-rooted`)
@@ -848,6 +850,179 @@ await check('searchCourses groups by activity type and stops early', async () =>
 })
 
 /* ------------------------------------------------------------------ *
+ * CLI parity: works, upload from a path, raw detail, captcha, triage
+ * ------------------------------------------------------------------ */
+
+await check('ucloud_works splits every course into submitted and unsubmitted', async () => {
+  const store = await tempStore()
+  await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
+  const fetchImpl = mockFetch([
+    { method: 'GET', match: 'site/list/student/current', reply: () => json({ data: { records: [
+      { id: 11, siteName: '高等数学', teachers: [{ name: '李老师' }] },
+      { id: 12, siteName: '信号分析', teachers: [{ name: '王老师' }] },
+    ] } }) },
+    { method: 'POST', match: 'ykt-site/work/student/list', reply: ({ init }) => {
+      const siteId = JSON.parse(init.body).siteId
+      return json({ data: { records: siteId === 11
+        ? [{ id: 'A1', assignmentTitle: '第一次作业', chapterName: '第一章', assignmentEndTime: '2026-01-01T23:59:00', submitTime: '2025-12-30T09:00:00' },
+           { id: 'A2', assignmentTitle: '第二次作业', assignmentEndTime: '2026-02-01T23:59:00' }]
+        : [{ id: 'B1', assignmentTitle: '思考题', assignmentEndTime: '2026-03-01T23:59:00' }] } })
+    } },
+  ])
+  const result = await callTool('ucloud_works', {
+    ctx: fakeCtx({ credentials: CREDENTIALS }),
+    env: { store, fetch: fetchImpl, username: () => '20210001' },
+    args: { filter: 'all' },
+  })
+  assert.equal(result.courses, 2)
+  assert.equal(result.submittedCount, 1)
+  assert.equal(result.unsubmittedCount, 2)
+  assert.equal(result.submitted[0].activityId, 'A1')
+  assert.ok(result.report.includes('已提交 1 份'))
+  assert.ok(result.report.includes('未提交 2 份'))
+  assert.ok(result.report.includes('id: A2'))
+})
+
+await check('ucloud_upload from a local path keeps the file\'s own name and MIME', async () => {
+  const store = await tempStore()
+  await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
+  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-ucloud-file-'))
+  const file = path.join(dir, '第二周书面作业.pdf')
+  await writeFile(file, Buffer.from('%PDF-1.4 fake'))
+  const fetchImpl = mockFetch([
+    { method: 'POST', match: 'resource/upload/biz', reply: ({ init }) => {
+      const body = init.body
+      assert.equal(body.get('userId'), 'U1')
+      const uploaded = body.get('file')
+      assert.equal(uploaded.name, '第二周书面作业.pdf', 'the attachment keeps its original filename')
+      assert.equal(uploaded.type, 'application/pdf', 'the MIME type comes from the extension')
+      return json({ success: true, data: 'RID-LOCAL' })
+    } },
+    { method: 'GET', match: 'resource/preview-url', reply: () => json({ data: { previewUrl: 'https://cdn.example/local.pdf' } }) },
+  ])
+  const result = await callTool('ucloud_upload', {
+    ctx: fakeCtx({ credentials: CREDENTIALS }),
+    env: { store, fetch: fetchImpl, username: () => '20210001' },
+    args: { path: file },
+  })
+  assert.equal(result.resourceId, 'RID-LOCAL')
+  assert.equal(result.filename, '第二周书面作业.pdf')
+  assert.equal(result.mimeType, 'application/pdf')
+})
+
+await check('ucloud_upload refuses both or neither source', async () => {
+  const store = await tempStore()
+  await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
+  const env = { store, fetch: mockFetch([]), username: () => '20210001' }
+  for (const args of [{}, { url: 'https://files.example/a.pdf', path: '/tmp/a.pdf' }]) {
+    await assert.rejects(
+      () => callTool('ucloud_upload', { ctx: fakeCtx({ credentials: CREDENTIALS }), env, args }),
+      (error) => error.code === 'invalid-arguments',
+    )
+  }
+})
+
+await check('ucloud_homework raw=true dumps every platform field, filterable', async () => {
+  const store = await tempStore()
+  await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
+  const fetchImpl = mockFetch([{ method: 'GET', match: 'ykt-site/work/detail', reply: () => json({ success: true, data: {
+    assignmentTitle: '第一次作业', assignmentContent: '<p>做 1-3 题</p>', className: '高等数学', assignmentStatus: 0, key: 'abc',
+  } }) }])
+  const env = { store, fetch: fetchImpl, username: () => '20210001' }
+  const all = await callTool('ucloud_homework', { ctx: fakeCtx({ credentials: CREDENTIALS }), env, args: { activityId: 'A1', raw: true } })
+  assert.ok(all.report.includes('assignmentTitle'), all.report)
+  assert.ok(all.report.includes('className'), all.report)
+  assert.deepEqual(all.fields, ['assignmentContent', 'assignmentStatus', 'assignmentTitle', 'className', 'key'])
+  assert.equal(all.raw.className, '高等数学')
+  const filtered = await callTool('ucloud_homework', { ctx: fakeCtx({ credentials: CREDENTIALS }), env, args: { activityId: 'A1', raw: true, fields: ['assignment'] } })
+  assert.ok(filtered.report.includes('assignmentTitle'))
+  assert.ok(!filtered.report.includes('className'), filtered.report)
+})
+
+await check('ucloud_undone_list triages urgent, backlog and dead work', async () => {
+  const store = await tempStore()
+  await store.update((draft) => { draft.users['20210001'] = { userinfo: USER, savedAt: 'now' } })
+  // The platform sends local (Beijing) timestamps with no zone suffix.
+  const inHours = (hours) => {
+    const date = new Date(Date.now() + hours * 3_600_000)
+    const pad = (value) => String(value).padStart(2, '0')
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  }
+  const fetchImpl = mockFetch([
+    { method: 'GET', match: 'site/student/undone', reply: () => json({ success: true, data: {
+      siteNum: 2, undoneNum: 3,
+      undoneList: [
+        { activityId: 'URGENT', activityName: '明天早上的作业', type: 3, siteId: 11, siteName: '高等数学', endTime: inHours(6) },
+        { activityId: 'LATER', activityName: '下周的作业', type: 3, siteId: 11, siteName: '高等数学', endTime: inHours(240) },
+        { activityId: 'DEAD', activityName: '过期作业', type: 3, siteId: 12, siteName: '信号分析', endTime: inHours(-48) },
+      ],
+    } }) },
+    { method: 'GET', match: 'site/list/student/current', reply: () => json({ data: { records: [
+      { id: 11, siteName: '高等数学', teachers: [{ name: '李老师' }] },
+      { id: 12, siteName: '信号分析', teachers: [{ name: '王老师' }] },
+    ] } }) },
+    { method: 'POST', match: 'ykt-site/work/student/list', reply: () => json({ data: { records: [{ id: 'URGENT' }, { id: 'LATER' }, { id: 'DEAD' }] } }) },
+    { method: 'GET', match: 'ykt-site/work/detail', reply: ({ url }) => json({ success: true, data: url.includes('DEAD')
+      ? { assignmentTitle: '过期作业', assignmentEndTime: inHours(-48), isOvertimeCommit: 1, assignmentStatus: 99 }
+      : { assignmentTitle: 'x', assignmentEndTime: inHours(6), isOvertimeCommit: 0, assignmentStatus: 99 } }) },
+  ])
+  const result = await callTool('ucloud_undone_list', {
+    ctx: fakeCtx({ credentials: CREDENTIALS }),
+    env: { store, fetch: fetchImpl, username: () => '20210001' },
+  })
+  assert.equal(result.count, 3)
+  assert.equal(result.urgentCount, 1)
+  assert.equal(result.expiredBlockedCount, 1)
+  assert.equal(result.todoCount, 2)
+  assert.ok(result.report.includes('🔴 24 小时内截止（1 项'), result.report)
+  assert.ok(result.report.includes('待办（1 项）'))
+  assert.ok(result.report.includes('⚪ 已过期且不可补交（1 项'))
+  assert.ok(result.report.includes('🔴 24 小时内截止'))
+  const urgent = result.items.find((item) => item.activityId === 'URGENT')
+  assert.equal(urgent.deadlineState, 'urgent')
+  const dead = result.items.find((item) => item.activityId === 'DEAD')
+  assert.equal(dead.canLateSubmit, false)
+  assert.equal(dead.isOvertimeCommit, 1)
+})
+
+await check('a captcha becomes a saved image plus an ucloud_login retry', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-ucloud-home-'))
+  const previousHome = process.env.DSH_HOME
+  process.env.DSH_HOME = dir
+  try {
+    const store = await tempStore()
+    const fetchImpl = mockFetch([
+      ...loginRoutes({ captcha: true }),
+      { method: 'GET', match: 'authserver/captcha', reply: () => new Response(new Uint8Array([137, 80, 78, 71]), { status: 200, headers: { 'content-type': 'image/png' } }) },
+    ])
+    const env = { store, fetch: fetchImpl, username: () => '20210001' }
+    const ctx = fakeCtx({ credentials: CREDENTIALS })
+    const account = await callTool('ucloud_account', { ctx, env, args: { verify: true } })
+    assert.equal(account.verified, false)
+    assert.equal(account.captchaRequired, true)
+    assert.ok(account.captchaId, 'a captcha id is handed back')
+    assert.ok(existsSync(account.imagePath), 'the image is on disk')
+    assert.ok(account.report.includes('ucloud_login'), account.report)
+
+    const done = await callTool('ucloud_login', { ctx, env, args: { captchaId: account.captchaId, captcha: 'a1b2' } })
+    assert.equal(done.verified, true)
+    assert.equal(done.realName, '张三')
+    const formPosts = fetchImpl.calls.filter((call) => call.method === 'POST' && call.url.includes('authserver/login'))
+    assert.equal(formPosts.length, 1, 'exactly one CAS form post, and it carried the answer')
+    assert.ok(String(formPosts[0].init.body).includes('captcha=a1b2'))
+    assert.equal(existsSync(account.imagePath), false, 'the image is cleaned up after use')
+
+    await assert.rejects(
+      () => callTool('ucloud_login', { ctx, env, args: { captchaId: 'nope', captcha: 'x' } }),
+      (error) => error.code === 'captcha-expired',
+    )
+  } finally {
+    if (previousHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousHome
+  }
+})
+
+/* ------------------------------------------------------------------ *
  * Plugin entry wiring
  * ------------------------------------------------------------------ */
 
@@ -885,7 +1060,8 @@ await check('apply injects tools and webServer and registers the real surfaces',
     const config = { username: { get: () => '20210001' } }
     entry.apply(ctx, config)
     assert.deepEqual(registered.tools.map((tool) => tool.name), [
-      'ucloud_undone_list', 'ucloud_homework', 'ucloud_search', 'ucloud_upload', 'ucloud_submit', 'ucloud_account',
+      'ucloud_undone_list', 'ucloud_works', 'ucloud_homework', 'ucloud_search',
+      'ucloud_upload', 'ucloud_submit', 'ucloud_account', 'ucloud_login',
     ])
     assert.equal(registered.routes.length, 1)
     assert.equal(registered.routes[0].kind, 'prefix')
