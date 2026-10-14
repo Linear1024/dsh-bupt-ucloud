@@ -12,7 +12,7 @@
  * writes go through one in-process queue so two tool calls cannot interleave a
  * read-modify-write.
  *
- * @module dsh-ucloud/state
+ * @module dsh-bupt-ucloud/state
  */
 
 import { chmod, mkdir, readFile, rename, writeFile } from 'node:fs/promises'

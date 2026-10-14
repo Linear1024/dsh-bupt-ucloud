@@ -1,11 +1,11 @@
-# dsh-ucloud — bundle patch.
+# dsh-bupt-ucloud — bundle patch.
 #
 # One Host row. It registers the six ucloud_* agent tools and the
-# /dsh-ucloud/verify route the settings page calls; the `dsh.client`
+# /dsh-bupt-ucloud/verify route the settings page calls; the `dsh.client`
 # declaration in package.json serves the 教学云 card on the Plugins page.
 #
 # The row id is the settings namespace the card edits, so it must stay `ucloud`
 # while client.js addresses it by that name.
 - insert:
     - id: ucloud
-      name: dsh-ucloud
+      name: dsh-bupt-ucloud

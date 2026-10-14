@@ -1,10 +1,10 @@
 /**
- * `dsh-ucloud` — Client half.
+ * `dsh-bupt-ucloud` — Client half.
  *
  * Registers this bundle's settings form on its own page in the plugin list
- * (`plugins.bundle.config`, key `dsh-ucloud`): 学号 over this plugin's own
+ * (`plugins.bundle.config`, key `dsh-bupt-ucloud`): 学号 over this plugin's own
  * settings section, 密码 and the optional 验证码识别令牌 over the deployment's
- * credential store, and a login check against the Host's `/dsh-ucloud/verify`
+ * credential store, and a login check against the Host's `/dsh-bupt-ucloud/verify`
  * route.
  *
  * The page holds no platform logic: reads and writes go through the shared
@@ -16,7 +16,7 @@
  * token so the card follows light/dark like the shipped pages.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-ucloud',
+  id: 'dsh-bupt-ucloud',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
@@ -27,9 +27,9 @@ window.__ModuleLoader__.load({
     /** Host plugin entry id; also the settings namespace the form edits. */
     const CONFIG_NS = 'ucloud';
     /** This plugin's own package name: the key `plugins.bundle.config` is addressed by. */
-    const BUNDLE_PACKAGE = 'dsh-ucloud';
+    const BUNDLE_PACKAGE = 'dsh-bupt-ucloud';
     /** Host route the login check calls. */
-    const VERIFY_URL = '/dsh-ucloud/verify';
+    const VERIFY_URL = '/dsh-bupt-ucloud/verify';
     /** Credential references (see the Host half). */
     const PASSWORD_REF = 'UCLOUD_PASSWORD';
     const OCR_TOKEN_REF = 'UCLOUD_OCR_TOKEN';
@@ -276,7 +276,7 @@ window.__ModuleLoader__.load({
       },
         // `data-plugin` matches the module system's own style ownership marker,
         // so a bundle reload drops this tag with the card.
-        h('style', { 'data-plugin': 'dsh-ucloud' }, CSS),
+        h('style', { 'data-plugin': 'dsh-bupt-ucloud' }, CSS),
         h(primitives.SettingsValueField, {
           id: 'plugin-config-ucloud-username',
           label: t('username'),
@@ -338,18 +338,18 @@ window.__ModuleLoader__.load({
      */
     function apply(ctx) {
       const t = ctx.locale.bind(NS);
-      ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-ucloud: dictionaries');
+      ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-bupt-ucloud: dictionaries');
       const card = new UcloudCardController(ctx.configForms.get(CONFIG_NS), ctx, t);
-      ctx.effect(() => () => { card.dispose(); }, 'dsh-ucloud: form subscription');
+      ctx.effect(() => () => { card.dispose(); }, 'dsh-bupt-ucloud: form subscription');
       ctx.effect(() => ctx.remote.$on('credentials/reference-updated', (ref) => {
         if (ref === PASSWORD_REF || ref === OCR_TOKEN_REF) void card.readCredentials();
-      }), 'dsh-ucloud: credential invalidations');
+      }), 'dsh-bupt-ucloud: credential invalidations');
       ctx.effect(() => ctx.configForms.whileServed([CONFIG_NS], () => ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
         name: 'plugins.bundle.config',
         key: BUNDLE_PACKAGE,
         locale: NS,
         inject: () => card.inject(),
-      }, UcloudCard))), 'dsh-ucloud: settings page');
+      }, UcloudCard))), 'dsh-bupt-ucloud: settings page');
     }
 
     return { NS, CONFIG_NS, BUNDLE_PACKAGE, VERIFY_URL, PASSWORD_REF, OCR_TOKEN_REF, inject, apply };

@@ -170,7 +170,7 @@ let captured = null
 dom.window.__ModuleLoader__ = { load: (row) => { captured = row } }
 await import(pathToFileURL(path.resolve('client.js')).href)
 assert.ok(captured, 'the client bundle registered a factory')
-assert.equal(captured.id, 'dsh-ucloud')
+assert.equal(captured.id, 'dsh-bupt-ucloud')
 
 const exports = captured.factory((id) => {
   if (id === 'react') return React
@@ -244,11 +244,11 @@ await check('apply registers one dictionary and one bundle-settings entry', () =
   const entry = host.state.slots[0]
   // The bundle's own page, not the Official group the shipped pages occupy.
   assert.equal(entry.options.name, 'plugins.bundle.config')
-  assert.equal(entry.options.key, 'dsh-ucloud')
+  assert.equal(entry.options.key, 'dsh-bupt-ucloud')
   assert.equal(entry.options.locale, 'settings.ucloud')
   assert.equal(entry.options.id, undefined)
   assert.equal(typeof entry.component, 'function')
-  assert.equal(exports.BUNDLE_PACKAGE, 'dsh-ucloud')
+  assert.equal(exports.BUNDLE_PACKAGE, 'dsh-bupt-ucloud')
 })
 
 /* ------------------------------------------------------------------ *
@@ -385,7 +385,7 @@ await check('测试登录 posts to the plugin route and renders the account name
   await act(async () => { buttonWith(container, '测试登录').click() })
   await flush()
   assert.equal(calls.length, 1)
-  assert.equal(calls[0].url, '/dsh-ucloud/verify')
+  assert.equal(calls[0].url, '/dsh-bupt-ucloud/verify')
   assert.equal(calls[0].init.method, 'POST')
   assert.ok(textOf(container).includes('登录成功'), textOf(container))
   assert.ok(textOf(container).includes('张三'))

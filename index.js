@@ -1,5 +1,5 @@
 /**
- * `dsh-ucloud` — Host half.
+ * `dsh-bupt-ucloud` — Host half.
  *
  * Wraps the [YouXam/ucloud](https://github.com/YouXam/ucloud) worker (GPL-3.0)
  * as an in-process DSH plugin: 学号 lives in this plugin's own settings section
@@ -13,9 +13,9 @@
  * | Surface | Where |
  * |---|---|
  * | Agent tools | `ucloud_undone_list`, `ucloud_homework`, `ucloud_search`, `ucloud_upload`, `ucloud_submit`, `ucloud_account` |
- * | Web UI | the **教学云** card on Settings → Plugins (`plugins.item`), plus `POST /dsh-ucloud/verify` for its login check |
+ * | Web UI | the **教学云** card on Settings → Plugins (`plugins.item`), plus `POST /dsh-bupt-ucloud/verify` for its login check |
  *
- * @module dsh-ucloud
+ * @module dsh-bupt-ucloud
  */
 
 import z from './vendor/schemastery.js'

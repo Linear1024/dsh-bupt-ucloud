@@ -84,7 +84,7 @@ function mockFetch(routes) {
 }
 
 async function tempStore() {
-  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-ucloud-'))
+  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-bupt-ucloud-'))
   return new StateStore(path.join(dir, 'state.json'))
 }
 
@@ -877,7 +877,7 @@ function harnessContext(services = {}) {
 }
 
 await check('apply injects tools and webServer and registers the real surfaces', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-ucloud-home-'))
+  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-bupt-ucloud-home-'))
   process.env.DSH_HOME = dir
   try {
     const { ctx, registered } = harnessContext()
@@ -889,7 +889,7 @@ await check('apply injects tools and webServer and registers the real surfaces',
     ])
     assert.equal(registered.routes.length, 1)
     assert.equal(registered.routes[0].kind, 'prefix')
-    assert.equal(registered.routes[0].path, '/dsh-ucloud')
+    assert.equal(registered.routes[0].path, '/dsh-bupt-ucloud')
     assert.equal(typeof registered.routes[0].handler, 'function')
     assert.ok(registered.events.has('credentials/reference-updated'))
     assert.equal(registered.effects, 2, 'one effect per injected surface')
@@ -906,7 +906,7 @@ await check('apply injects tools and webServer and registers the real surfaces',
 })
 
 await check('the plugin caches tokens in its own profile\'s state file', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-ucloud-home-'))
+  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-bupt-ucloud-home-'))
   process.env.DSH_HOME = dir
   const realFetch = globalThis.fetch
   try {
@@ -927,7 +927,7 @@ await check('the plugin caches tokens in its own profile\'s state file', async (
 })
 
 await check('a rotated credential drops the cached platform token', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-ucloud-home-'))
+  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-bupt-ucloud-home-'))
   process.env.DSH_HOME = dir
   try {
     const { ctx, registered } = harnessContext()
@@ -951,7 +951,7 @@ await check('a rotated credential drops the cached platform token', async () => 
 })
 
 await check('a missing tools or webServer service leaves the plugin inert, not broken', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-ucloud-home-'))
+  const dir = await mkdtemp(path.join(tmpdir(), 'dsh-bupt-ucloud-home-'))
   process.env.DSH_HOME = dir
   try {
     const entry = await import('../index.js')

@@ -1,20 +1,20 @@
-# dsh-ucloud
+# dsh-bupt-ucloud
 
 把 [YouXam/ucloud](https://github.com/YouXam/ucloud)（北邮教学云平台的 Cloudflare Worker 代理）封装成 DSH 插件：
 **学号、密码在「设置 → 插件」页配置**，配置完成后 DSH 可以直接查询未完成作业、读取作业详情、搜索课程、上传附件并提交作业。
 
 | 面 | 位置 |
 |---|---|
-| 设置页 | 「设置 → 插件」→ 插件列表里的 **dsh-ucloud** → 它自己的配置页（`plugins.bundle.config`，key `dsh-ucloud`，标题取自 `locale/zh.json` 的「教学云」） |
+| 设置页 | 「设置 → 插件」→ 插件列表里的 **dsh-bupt-ucloud** → 它自己的配置页（`plugins.bundle.config`，key `dsh-bupt-ucloud`，标题取自 `locale/zh.json` 的「教学云」） |
 | Agent 工具 | `ucloud_undone_list`、`ucloud_homework`、`ucloud_search`、`ucloud_upload`、`ucloud_submit`、`ucloud_account` |
-| 宿主路由 | `POST /dsh-ucloud/verify`（设置页「测试登录」按钮使用） |
+| 宿主路由 | `POST /dsh-bupt-ucloud/verify`（设置页「测试登录」按钮使用） |
 
 设置页与工具读取同一份账号配置，因此页面显示的和模型用到的账号永远一致。
 
 ## 安装
 
 ```bash
-dsh plugin --profile web add /absolute/path/to/dsh-ucloud
+dsh plugin --profile web add /absolute/path/to/dsh-bupt-ucloud
 ```
 
 或者通过 `plugin_manager` 工具安装（`install_bundle`）。两种方式都会把该 bundle 写进
@@ -25,7 +25,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-ucloud
 
 ## 配置
 
-打开 Web UI 的 **设置 → 插件**，点开插件列表里的 **教学云 / dsh-ucloud**（配置表单就在这个 bundle 自己的页面里，不在「官方插件」区）：
+打开 Web UI 的 **设置 → 插件**，点开插件列表里的 **教学云 / dsh-bupt-ucloud**（配置表单就在这个 bundle 自己的页面里，不在「官方插件」区）：
 
 | 字段 | 存放位置 | 说明 |
 |---|---|---|
@@ -35,7 +35,7 @@ dsh plugin --profile web add /absolute/path/to/dsh-ucloud
 
 密码与验证码令牌只写不读：页面仅显示「已配置 / 未配置」，保存后再次进入页面也不会回显。
 
-保存后点 **测试登录**：页面会先保存未提交的改动，再调用 `POST /dsh-ucloud/verify`
+保存后点 **测试登录**：页面会先保存未提交的改动，再调用 `POST /dsh-bupt-ucloud/verify`
 真正登录一次，并显示姓名与角色（失败时显示平台或网络返回的原因）。
 该路由与 `/api` 一样经过部署自身的浏览器信任检查（`ctx.connection.requestRejection`），
 检查不可用时以 503 失败关闭，且响应里永远不会出现凭据。
@@ -97,7 +97,7 @@ CSS/React/CJS 依赖），并断言：学号经设置表单保存、密码与 OC
 此外还用**真实 harness**（`dsh` 0.2.0-rc.2 + 一份可写的临时 profile，不动用户配置）验证过：
 bundle 与 patch 正常组合、Host 模块加载成功、客户端 bundle 出现在 `__DSH_BOOT__` 图里、
 `settings.describe` 返回 `ucloud` 命名空间且 `username` 可写、`settings.mutate` 写入后
-`/dsh-ucloud/verify` 立刻按新学号报错（`missing-password`）。完整步骤与实测结果见
+`/dsh-bupt-ucloud/verify` 立刻按新学号报错（`missing-password`）。完整步骤与实测结果见
 [tests/README.md](tests/README.md)。
 
 ## 安全
@@ -110,7 +110,7 @@ bundle 与 patch 正常组合、Host 模块加载成功、客户端 bundle 出�
   按学号分条缓存；密码或 OCR 令牌变更会清空缓存。
 - 任何返回给浏览器或模型的内容都不含凭据；`ucloud_account` 只报告"是否已配置"。
   验证码识别失败只回固定原因，不会把带 token 的 OCR 请求 URL 带进错误信息。
-- 唯一的路由 `/dsh-ucloud/verify` 只做登录校验并返回姓名/角色，且有请求体大小上限。
+- 唯一的路由 `/dsh-bupt-ucloud/verify` 只做登录校验并返回姓名/角色，且有请求体大小上限。
 - `ucloud_upload` 会在宿主进程里按模型给出的 URL 下载文件，这是一个 SSRF 面（可访问
   内网地址），随后还要把内容上传到教学云；只对可信 URL 使用，且单次调用有大小上限
   （默认 100 MB，超过即中止下载且不上传）。

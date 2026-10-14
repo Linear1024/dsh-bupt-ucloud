@@ -16,7 +16,7 @@
  * Every function takes an explicit `{ fetch, signal }` seam, so tests drive the
  * exact request the platform would receive without touching the network.
  *
- * @module dsh-ucloud/ucloud
+ * @module dsh-bupt-ucloud/ucloud
  */
 
 /** Platform origin every ucloud API call uses. */

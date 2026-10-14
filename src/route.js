@@ -9,14 +9,14 @@
  * browser trust check, exactly like every `/api` call, and it never returns a
  * credential — only the account name the platform reported.
  *
- * @module dsh-ucloud/route
+ * @module dsh-bupt-ucloud/route
  */
 
 import { UcloudError, getToken } from './ucloud.js'
 import { readAccount } from './tools.js'
 
 /** Route prefix the settings page calls. */
-export const ROUTE_PREFIX = '/dsh-ucloud'
+export const ROUTE_PREFIX = '/dsh-bupt-ucloud'
 
 /** Exact endpoint of the login check. */
 export const VERIFY_PATH = `${ROUTE_PREFIX}/verify`

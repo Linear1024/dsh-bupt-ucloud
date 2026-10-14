@@ -7,7 +7,7 @@
  * them fails with a message naming the settings page, which is what the model
  * relays to the user.
  *
- * @module dsh-ucloud/tools
+ * @module dsh-bupt-ucloud/tools
  */
 
 import {

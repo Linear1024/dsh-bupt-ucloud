@@ -1,5 +1,5 @@
 {
-  "name": "dsh-ucloud",
+  "name": "dsh-bupt-ucloud",
   "version": "1.0.0",
   "private": true,
   "description": "BUPT 教学云（ucloud）插件：在「设置 → 插件」页配置学号与密码，并为 DSH 提供未完成作业、作业详情、课程搜索、附件上传与作业提交工具。",
